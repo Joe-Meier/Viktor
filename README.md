@@ -14,6 +14,10 @@ Replies are drafts. Nothing in this app sends email; you copy the draft into you
 - **Persistence.** Threads and registries are saved in your browser's localStorage and survive a refresh.
 - **Generation** runs server-side through the Anthropic API (`app/api/reply/route.ts`). The model gets the full thread, the registry as canon, the absurdity level and the turn number, and returns JSON (the reply plus a registry update) that is validated with zod and retried once if unusable.
 
+## Gmail add-on
+
+`gmail-addon/` has the same tool as a Gmail side panel (web and phone): open a sales email, see that thread's Uncle Registry, generate a reply and turn it into a Gmail draft you send yourself. It installs from your own Google account in about five minutes; see [gmail-addon/README.md](gmail-addon/README.md). Its threads are stored in your Google account, separate from this web app's browser threads.
+
 ## Setup
 
 Requires Node 22 or newer (see `.nvmrc`).
@@ -51,4 +55,5 @@ npm start       # serve the production build
 - `lib/generate.ts` model call, JSON extraction, validation and retry
 - `lib/storage.ts` versioned localStorage persistence
 - `lib/sample.ts` the sample conversation
+- `gmail-addon/` the Gmail add-on (Apps Script); its shared logic is tested against `lib/` in `tests/gmail-addon.test.ts`
 - `tests/` vitest suites
