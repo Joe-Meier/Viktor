@@ -225,6 +225,48 @@ describe("Gmail add-on: storage in user properties", () => {
   });
 });
 
+describe("Gmail add-on: senders GmailApp can't reply to", () => {
+  it("spots comma display names and pulls out the bare address", () => {
+    expect(S.uncleNeedsBareReply('"Silence, Brand!" <silencebrand@substack.com>')).toBe(true);
+    expect(S.uncleNeedsBareReply("Marcus Bell <marcus@shiftwise.io>")).toBe(false);
+    expect(S.uncleNeedsBareReply("marcus@shiftwise.io")).toBe(false);
+    expect(S.uncleReplyAddress('"Silence, Brand!" <SilenceBrand@substack.com>')).toBe("silencebrand@substack.com");
+    expect(S.uncleReplyAddress("Silence, Brand! <silencebrand@substack.com>")).toBe("silencebrand@substack.com");
+    expect(S.uncleReplyAddress("Undisclosed recipients")).toBe("");
+    expect(S.uncleReplySubject("Cut scheduling time in half")).toBe("Re: Cut scheduling time in half");
+    expect(S.uncleReplySubject("RE: already")).toBe("RE: already");
+    expect(S.uncleReplySubject("")).toBe("Re: (no subject)");
+  });
+
+  it("drafts to the bare address when the sender's name has a comma", () => {
+    const { addon, gmail } = setup({
+      messages: [{ id: "m1", from: '"Silence, Brand!" <silencebrand@substack.com>', date: 1_000, body: COLD }],
+    });
+    // The stand-in fails like Apps Script does on this header.
+    expect(() => gmail.GmailApp.getMessageById("m1").createDraftReply("x")).toThrow("Invalid email: Silence");
+    let card = addon.g.onGmailMessage(event("m1"));
+    card = cardOf(click(addon, card, "Generate reply", { level: "2" }));
+    const res = click(addon, card, "Create Gmail draft", { reply: "Hi,\n\nMy uncle has thoughts." });
+    expect(res.kind).toBe("ComposeActionResponseBuilder");
+    expect(gmail.thread.drafts).toEqual([]);
+    expect(gmail.looseDrafts).toEqual([
+      { id: "loose-1", to: "silencebrand@substack.com", subject: "Re: Cut scheduling time in half", body: "Hi,\n\nMy uncle has thoughts." },
+    ]);
+    card = addon.g.onGmailMessage(event("m1"));
+    expect(cardText(card)).toContain("Draft created.");
+  });
+
+  it("falls back to the bare address when createDraftReply fails for another reason", () => {
+    const { addon, gmail } = setup({
+      messages: [{ id: "m1", from: "Marcus Bell <marcus@shiftwise.io>", date: 1_000, body: COLD, failDraftReply: "Invalid argument" }],
+    });
+    let card = addon.g.onGmailMessage(event("m1"));
+    card = cardOf(click(addon, card, "Generate reply", { level: "2" }));
+    click(addon, card, "Create Gmail draft", { reply: "Hi Marcus" });
+    expect(gmail.looseDrafts).toMatchObject([{ to: "marcus@shiftwise.io", subject: "Re: Cut scheduling time in half", body: "Hi Marcus" }]);
+  });
+});
+
 describe("Gmail add-on: the panel, driven like Gmail does", () => {
   it("generates, edits, creates a reply draft (never sends) and makes canon on 'I sent it'", () => {
     const { addon, gmail } = setup();
@@ -377,7 +419,7 @@ describe("Gmail add-on: manifest and source", () => {
   });
 
   it("has no way to send email and no key in code", () => {
-    expect(source).not.toMatch(/sendEmail|\.send\(|GmailApp\.createDraft|MailApp/);
+    expect(source).not.toMatch(/sendEmail|\.send\(|MailApp|sendDraft|\.forward\(|\.reply\(|\.replyAll\(/);
     expect(source).not.toMatch(/sk-ant-/);
   });
 });

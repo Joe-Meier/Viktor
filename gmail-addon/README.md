@@ -29,6 +29,7 @@ You need: your Google account, and an Anthropic API key (console.anthropic.com >
 - **Generate reply** writes a 2-4 sentence reply that answers the actual pitch and adds one complication. Edit the text in the box as much as you like.
 - **Complicate matters** writes a different version that goes a little further than the one in the box.
 - **Create Gmail draft** puts the text from the box into a reply draft in this thread. Review and send it from Gmail.
+  - One exception: when the sender's name has a comma in it (`"Silence, Brand!" <…@substack.com>`), Gmail's script tools can't reply to it. The add-on then opens a new draft to their bare address with "Re: <subject>". That draft isn't linked to the conversation. Keeping it in the thread would need the much broader "manage drafts and send email" permission, which this add-on doesn't ask for.
 - **Canon.** What a draft adds to the registry is marked *(in draft)* and stays tentative until the reply is sent. It becomes canon when you tap **I sent it**, or by itself the next time you open the thread after a newer message is in it (their reply, or your sent reply). Canon is never rewritten: an uncle who distrusts subscriptions still does three emails later.
 - **Settings** (bottom of the panel): Reload, and *Clear this thread's registry* to start a thread over.
 

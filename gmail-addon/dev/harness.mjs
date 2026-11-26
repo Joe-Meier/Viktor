@@ -87,7 +87,13 @@ export function fakeGmail(threadId, subject, messages, me) {
       getPlainBody: () => m.body,
       isDraft: () => !!m.isDraft,
       getThread: () => thread,
+      getSubject: () => m.subject ?? subject,
       createDraftReply: (text) => {
+        // Like Apps Script: the From header is split on commas, so a quoted display name
+        // with a comma fails.
+        const first = String(m.from).split(",")[0].trim();
+        if (m.failDraftReply) throw new Error(m.failDraftReply);
+        if (String(m.from).split(",").length > 1 && !/@/.test(first)) throw new Error(`Invalid email: ${first.replace(/^"/, "")}`);
         const draft = { id: `draft-${thread.drafts.length + 1}`, from: me, date: Date.now(), body: text, isDraft: true, replyTo: m.id };
         thread.drafts.push(draft);
         messages.push(draft);
@@ -95,11 +101,20 @@ export function fakeGmail(threadId, subject, messages, me) {
       },
     };
   }
+  /** Drafts made outside the thread (GmailApp.createDraft). */
+  const looseDrafts = [];
   return {
     thread,
     messages,
+    looseDrafts,
     GmailApp: {
       setCurrentMessageAccessToken() {},
+      createDraft(recipient, draftSubject, body) {
+        if (/[<>,"]/.test(recipient)) throw new Error(`Invalid email: ${recipient}`);
+        const draft = { id: `loose-${looseDrafts.length + 1}`, to: recipient, subject: draftSubject, body };
+        looseDrafts.push(draft);
+        return { getId: () => draft.id, __draft: draft };
+      },
       getMessageById(id) {
         const m = messages.find((x) => x.id === id);
         if (!m) throw new Error(`No message ${id}`);

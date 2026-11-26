@@ -511,6 +511,28 @@ function uncleParseAddress(from) {
   return { name: "", email: s.toLowerCase() };
 }
 
+/**
+ * GmailApp's createDraftReply splits the original From header on commas, so a sender like
+ * "Silence, Brand!" <x@y.com> fails with "Invalid email: Silence". Those get a new draft
+ * addressed to the bare address instead.
+ */
+function uncleNeedsBareReply(from) {
+  return uncleParseAddress(from).name.indexOf(",") !== -1;
+}
+
+/** The bare address to reply to, or "" when the header has none. */
+function uncleReplyAddress(from) {
+  var email = uncleParseAddress(from).email;
+  return /^[^\s@<>",]+@[^\s@<>",]+$/.test(email) ? email : "";
+}
+
+/** "Cut costs" -> "Re: Cut costs"; leaves an existing "Re:" alone. */
+function uncleReplySubject(subject) {
+  var s = String(subject || "").trim();
+  if (/^re:/i.test(s)) return s;
+  return "Re: " + (s || "(no subject)");
+}
+
 var UNCLE_MAX_BODY = 20000;
 var UNCLE_MAX_MESSAGES = 60;
 
@@ -711,6 +733,9 @@ if (typeof module !== "undefined" && module.exports) {
     uncleApiErrorMessage: uncleApiErrorMessage,
     uncleStripQuoted: uncleStripQuoted,
     uncleParseAddress: uncleParseAddress,
+    uncleNeedsBareReply: uncleNeedsBareReply,
+    uncleReplyAddress: uncleReplyAddress,
+    uncleReplySubject: uncleReplySubject,
     uncleThreadMessages: uncleThreadMessages,
     uncleNewState: uncleNewState,
     uncleNormalizeState: uncleNormalizeState,

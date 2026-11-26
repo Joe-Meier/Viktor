@@ -86,14 +86,7 @@ function actionCreateDraft(e) {
   var state = loaded.state;
   var text = String(formValue_(e, "reply") || (state.pending && state.pending.text) || "").trim();
   if (!text) throw new Error("Generate or write a reply first.");
-  var target = ctx.replyTarget || ctx.message;
-  var draft;
-  try {
-    draft = target.createDraftReply(text);
-  } catch (err) {
-    if (target === ctx.message) throw err;
-    draft = ctx.message.createDraftReply(text);
-  }
+  var draft = draftReply_(ctx, ctx.replyTarget || ctx.message, text);
   if (state.pending) {
     state = Object.assign({}, state, {
       pending: Object.assign({}, state.pending, { text: text, draftCreated: true }),
@@ -102,6 +95,30 @@ function actionCreateDraft(e) {
     saveState_(state);
   }
   return CardService.newComposeActionResponseBuilder().setGmailDraft(draft).build();
+}
+
+/**
+ * A reply draft in the thread when Gmail allows it. When the sender's display name has a
+ * comma (GmailApp can't parse it) or createDraftReply fails for another reason, a new draft
+ * to the bare address with "Re: <subject>". That one is not threaded: keeping it in the
+ * conversation needs the Gmail API with the broad gmail.compose scope, which this add-on
+ * doesn't ask for. Either way nothing is sent.
+ */
+function draftReply_(ctx, target, text) {
+  var from = target.getFrom();
+  var failure = null;
+  if (!uncleNeedsBareReply(from)) {
+    try {
+      return target.createDraftReply(text);
+    } catch (err) {
+      failure = err;
+    }
+  }
+  var address = uncleReplyAddress(from);
+  if (!address) throw failure || new Error("Couldn't read the sender's address from: " + from);
+  var subject = "";
+  try { subject = target.getSubject(); } catch (err) { /* fall back to the thread's subject */ }
+  return GmailApp.createDraft(address, uncleReplySubject(subject || ctx.subject), text);
 }
 
 /** "I sent it": the draft's registry changes become canon. */
