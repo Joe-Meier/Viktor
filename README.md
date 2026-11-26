@@ -16,7 +16,7 @@ Replies are drafts. Nothing in this app sends email; you copy the draft into you
 
 ## Gmail add-on
 
-`gmail-addon/` has the same tool as a Gmail side panel (web and phone): open a sales email, see that thread's Uncle Registry, generate a reply and turn it into a Gmail draft you send yourself. It installs from your own Google account in about five minutes; see [gmail-addon/README.md](gmail-addon/README.md). Its threads are stored in your Google account, separate from this web app's browser threads.
+`gmail-addon/` has the same tool as a Gmail side panel (web and phone): open a sales email, see that thread's Uncle Registry, generate a reply, then either turn it into a Gmail draft or send it from the panel after a review card (only "Send now" sends). It installs from your own Google account in about five minutes; see [gmail-addon/README.md](gmail-addon/README.md). Its threads are stored in your Google account, separate from this web app's browser threads.
 
 ## Setup
 

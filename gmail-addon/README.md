@@ -1,8 +1,8 @@
 # Per My Last Uncle for Gmail
 
-A Gmail side panel for the same idea as the web app. Open a sales email and the panel shows that thread's **Uncle Registry** (uncles and their roles and authority, disagreements, outstanding requests, established facts), an absurdity control, and a **Generate reply** button. The reply appears in an editable box with **Complicate matters** (try again, further), **Create Gmail draft**, and **I sent it**.
+A Gmail side panel for the same idea as the web app. Open a sales email and the panel shows that thread's **Uncle Registry** (uncles and their roles and authority, disagreements, outstanding requests, established facts), an absurdity control, and a **Generate reply** button. The reply appears in an editable box with **Create Gmail draft**, **Send reply**, **Complicate matters** (try again, further), and **I sent it**.
 
-**Nothing is ever sent for you.** "Create Gmail draft" opens a reply draft in that thread; you read it, change it if you like, and press Send yourself.
+**Nothing is sent without your say-so.** "Create Gmail draft" opens a reply draft in that thread for you to send yourself. "Send reply" first shows a review card with the recipient, subject and full text; only **Send now** on that card sends.
 
 It works in Gmail on the web and in the Gmail app on iPhone and Android. It runs from your own Google account: no server, no store listing.
 
@@ -21,7 +21,7 @@ You need: your Google account, and an Anthropic API key (console.anthropic.com >
    - **Web:** in the narrow bar on the right edge, click the uncle icon (an elderly man with a cane). The panel opens beside the email.
    - **Phone:** open the email in the Gmail app and scroll to the bottom; tap the **Per My Last Uncle** row.
 
-**The first time only**, the panel asks for access: click **Authorize access** and pick your account. Google lists what it can do: read the email you have open, make drafts when you ask, connect to an external service (Anthropic), and see your email address (so it can tell your messages from theirs). Because this is your own unpublished script, Google may show **"Google hasn't verified this app"**: click **Advanced** > **Go to Per My Last Uncle (unsafe)**. That warning is about the app not being reviewed by Google; it's your own code running in your own account. On a company Google Workspace account an administrator may have blocked unverified scripts; if Install or authorization is refused, that's why.
+**The first time only**, the panel asks for access: click **Authorize access** and pick your account. Google lists what it can do: read the email you have open, make drafts when you ask, **send email on your behalf** (only when you tap Send now), connect to an external service (Anthropic and Gmail's API), and see your email address (so it can tell your messages from theirs). Because this is your own unpublished script, Google may show **"Google hasn't verified this app"**: click **Advanced** > **Go to Per My Last Uncle (unsafe)**. That warning is about the app not being reviewed by Google; it's your own code running in your own account. On a company Google Workspace account an administrator may have blocked unverified scripts; if Install or authorization is refused, that's why.
 
 ## Using it
 
@@ -30,6 +30,11 @@ You need: your Google account, and an Anthropic API key (console.anthropic.com >
 - **Complicate matters** writes a different version that goes a little further than the one in the box.
 - **Create Gmail draft** puts the text from the box into a reply draft in this thread. Review and send it from Gmail.
   - One exception: when the sender's name has a comma in it (`"Silence, Brand!" <…@substack.com>`), Gmail's script tools can't reply to it. The add-on then opens a new draft to their bare address with "Re: <subject>". That draft isn't linked to the conversation. Keeping it in the thread would need the much broader "manage drafts and send email" permission, which this add-on doesn't ask for.
+- **Send reply** sends the text in the box without going through drafts. It opens a review card first: **To** (their bare address), **Subject** (`Re: …`) and the full reply, with **Send now** and **Back**. Back sends nothing.
+  - Send now posts the reply through the Gmail API as a reply in the same conversation (in-thread, with the right reply headers). This works for comma-name senders too.
+  - On success the panel says "Sent. The registry is now canon." and the draft's changes become canon, as if you'd tapped I sent it.
+  - If Gmail refuses, you see its error, nothing is sent, and your reply and its *(in draft)* changes stay.
+  - If you already made a Gmail draft of the same reply, delete that draft after sending.
 - **Canon.** What a draft adds to the registry is marked *(in draft)* and stays tentative until the reply is sent. It becomes canon when you tap **I sent it**, or by itself the next time you open the thread after a newer message is in it (their reply, or your sent reply). Canon is never rewritten: an uncle who distrusts subscriptions still does three emails later.
 - **Settings** (bottom of the panel): Reload, and *Clear this thread's registry* to start a thread over.
 
@@ -54,3 +59,7 @@ You need: your Google account, and an Anthropic API key (console.anthropic.com >
 | `dev/` | Not part of the add-on. `harness.mjs` loads the `.gs` files under Node with stand-ins for Gmail and CardService (used by `tests/gmail-addon.test.ts`); `live-check.mjs` runs a real three-email conversation against Anthropic: `ANTHROPIC_API_KEY=... node gmail-addon/dev/live-check.mjs`. |
 
 `tests/gmail-addon.test.ts` checks that the add-on's prompt, levels, registry merge and output parsing match the web app's `lib/` exactly, and drives the panel the way Gmail does (open email, Generate, edit, Create Gmail draft, I sent it, their reply arrives).
+
+## Updating from an earlier version
+
+Paste the new `Code.gs`, `Shared.gs` and `appsscript.json` over the old ones and save. When `appsscript.json` adds a permission (Send reply added "send email on your behalf"), the panel shows **Authorize access** again the next time you open an email. Approve it the same way as the first time. The test deployment itself doesn't need to be reinstalled.

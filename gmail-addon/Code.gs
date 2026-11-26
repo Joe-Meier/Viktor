@@ -2,12 +2,14 @@
  * Per My Last Uncle, Gmail add-on: cards, Gmail, storage and the Anthropic call.
  * The prompt, parsing, registry and canon rules live in Shared.gs.
  *
- * Nothing here sends email. "Create Gmail draft" opens a reply draft for you to review and
- * send yourself.
+ * "Create Gmail draft" opens a reply draft for you to review and send yourself. "Send reply"
+ * only shows a confirmation card; the one code path that sends email is "Send now" on that
+ * card (actionSendNow -> gmailSendReply_).
  */
 
 var UNCLE_LOGO = "https://www.gstatic.com/images/icons/material/system/2x/elderly_black_48dp.png";
 var UNCLE_API_URL = "https://api.anthropic.com/v1/messages";
+var UNCLE_GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 var UNCLE_TIME_BUDGET_MS = 12000; // skip the retry after this; add-on actions stop at ~30 s
 
 /* ---------- Triggers ---------- */
@@ -18,7 +20,7 @@ function onHomepage(e) {
   var card = CardService.newCardBuilder().setHeader(header_("Per My Last Uncle", "Uncle Registry for sales email"));
   var intro = CardService.newCardSection()
     .addWidget(text_("Open a sales email. This panel then shows that thread's Uncle Registry and drafts a sincere reply involving your uncles."))
-    .addWidget(text_("Replies go into Gmail as drafts. Nothing is ever sent for you."));
+    .addWidget(text_("Replies go into Gmail as drafts, or are sent after you confirm on a review card. Nothing is sent without your say-so."));
   card.addSection(intro);
   card.addSection(setupSection_(config));
   return card.build();
@@ -119,6 +121,81 @@ function draftReply_(ctx, target, text) {
   var subject = "";
   try { subject = target.getSubject(); } catch (err) { /* fall back to the thread's subject */ }
   return GmailApp.createDraft(address, uncleReplySubject(subject || ctx.subject), text);
+}
+
+/** Who a sidebar send goes to, the subject and the threading headers. */
+function sendPlan_(ctx, text) {
+  var target = ctx.replyTarget;
+  if (!target) throw new Error("There is no message from them in this thread to reply to.");
+  var to = uncleReplyAddress(target.getFrom());
+  if (!to) throw new Error("Couldn't read the sender's address from: " + target.getFrom());
+  var subject = "";
+  try { subject = target.getSubject(); } catch (err) { /* use the thread's subject */ }
+  subject = uncleReplySubject(subject || ctx.subject);
+  return { to: to, subject: subject, text: text, signature: uncleSendSignature(to, subject, text) };
+}
+
+/** "Send reply": never sends. Saves the edited text and shows the confirmation card. */
+function actionConfirmSend(e) {
+  var ctx = openContext_(e);
+  var state = loadSynced_(ctx).state;
+  var text = String(formValue_(e, "reply") || (state.pending && state.pending.text) || "").trim();
+  if (!text || !state.pending) return notify_("Generate or write a reply first.");
+  var plan;
+  try {
+    plan = sendPlan_(ctx, text);
+  } catch (err) {
+    return notify_(errMessage_(err));
+  }
+  state = Object.assign({}, state, { pending: Object.assign({}, state.pending, { text: text }), updatedAt: Date.now() });
+  saveState_(state);
+  return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().pushCard(confirmSendCard_(ctx, plan))).build();
+}
+
+/** "Send now" on the confirmation card: the only action that sends email. */
+function actionSendNow(e) {
+  var ctx = openContext_(e);
+  var state = loadSynced_(ctx).state;
+  if (!state.pending) return backToThread_(ctx, state, "Nothing to send; the reply was already sent or discarded.");
+  var plan = sendPlan_(ctx, String(state.pending.text || "").trim());
+  if (!plan.text || plan.signature !== param_(e, "signature")) {
+    return backToThread_(ctx, state, "The reply or its recipient changed since you reviewed it. Nothing was sent; tap Send reply to review it again.");
+  }
+  try {
+    gmailSendReply_(ctx, plan);
+  } catch (err) {
+    return updateCard_(sendFailedCard_(ctx, errMessage_(err)));
+  }
+  state = uncleCommitPending(state, Date.now());
+  var saved = saveState_(state);
+  return backToThread_(ctx, state, "Sent. The registry is now canon." + (saved.ok ? "" : " " + saveNotice_(saved)));
+}
+
+/** POST the reply to Gmail API users.messages.send, threaded under the message it answers. */
+function gmailSendReply_(ctx, plan) {
+  var target = ctx.replyTarget;
+  var header = function (name) {
+    try { return String(target.getHeader(name) || ""); } catch (err) { return ""; }
+  };
+  var mime = uncleBuildReplyMime(
+    { to: plan.to, subject: plan.subject, inReplyTo: header("Message-ID"), references: header("References"), text: plan.text },
+    function (str) { return Utilities.base64Encode(str, Utilities.Charset.UTF_8); },
+  );
+  var res = UrlFetchApp.fetch(UNCLE_GMAIL_SEND_URL, {
+    method: "post",
+    contentType: "application/json",
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    payload: JSON.stringify({ raw: Utilities.base64EncodeWebSafe(mime, Utilities.Charset.UTF_8), threadId: ctx.threadId }),
+    muteHttpExceptions: true,
+  });
+  var code = res.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error(uncleGmailErrorMessage(code, res.getContentText()));
+}
+
+function backToThread_(ctx, state, notice) {
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().popToRoot().updateCard(threadCard_(ctx, state, notice)))
+    .build();
 }
 
 /** "I sent it": the draft's registry changes become canon. */
@@ -300,12 +377,13 @@ function threadCard_(ctx, state, notice) {
             .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
             .setComposeAction(action_("actionCreateDraft", params), CardService.ComposedEmailType.REPLY_AS_DRAFT),
         )
+        .addButton(button_("Send reply", action_("actionConfirmSend", params)))
         .addButton(button_("Complicate matters", action_("actionGenerate", Object.assign({ mode: "complicate" }, params), true))),
     );
     reply.addWidget(
       text_(
         state.pending.draftCreated
-          ? "Draft created. Send it from Gmail, then tap \"I sent it\". The registry also updates on its own when they reply."
+          ? "Draft created. Send it from Gmail, then tap \"I sent it\". The registry also updates on its own when they reply. Or use Send reply here."
           : "Changes marked (in draft) become canon once you send this reply: tap \"I sent it\", or it happens on its own when they reply.",
       ),
     );
@@ -344,6 +422,47 @@ function threadCard_(ctx, state, notice) {
       ),
   );
   return card.build();
+}
+
+/** Review before sending: recipient, subject, full text, Send now / Back. */
+function confirmSendCard_(ctx, plan) {
+  var params = { messageId: ctx.messageId, signature: plan.signature };
+  var s = CardService.newCardSection()
+    .addWidget(text_("<b>To:</b> " + esc_(plan.to)))
+    .addWidget(text_("<b>Subject:</b> " + esc_(plan.subject)))
+    .addWidget(text_(esc_(plan.text).replace(/\r?\n/g, "<br>")))
+    .addWidget(text_("Sending makes this reply's registry changes canon. If you already made a Gmail draft of it, delete that draft afterwards."))
+    .addWidget(
+      CardService.newButtonSet()
+        .addButton(
+          CardService.newTextButton()
+            .setText("Send now")
+            .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+            .setOnClickAction(action_("actionSendNow", params, true)),
+        )
+        .addButton(button_("Back", CardService.newAction().setFunctionName("actionBack"))),
+    );
+  return CardService.newCardBuilder().setName("confirm-send").setHeader(header_("Send this reply?", "Nothing is sent until you tap Send now")).addSection(s).build();
+}
+
+function sendFailedCard_(ctx, message) {
+  var s = CardService.newCardSection()
+    .addWidget(text_(esc_(message)))
+    .addWidget(text_("Nothing was sent. Your reply and its tentative registry changes are kept."))
+    .addWidget(CardService.newButtonSet().addButton(button_("Back", action_("actionRefreshRoot", { messageId: ctx.messageId }))));
+  return CardService.newCardBuilder().setHeader(header_("The reply was not sent", "Per My Last Uncle")).addSection(s).build();
+}
+
+/** "Back" on the confirmation card. */
+function actionBack() {
+  return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().popCard()).build();
+}
+
+/** "Back" from a failed send: the thread card, reloaded. */
+function actionRefreshRoot(e) {
+  var ctx = openContext_(e);
+  var loaded = loadSynced_(ctx);
+  return backToThread_(ctx, loaded.state, loaded.notice);
 }
 
 function registrySections_(canon, preview) {

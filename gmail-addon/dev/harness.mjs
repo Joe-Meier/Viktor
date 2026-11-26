@@ -88,6 +88,7 @@ export function fakeGmail(threadId, subject, messages, me) {
       isDraft: () => !!m.isDraft,
       getThread: () => thread,
       getSubject: () => m.subject ?? subject,
+      getHeader: (name) => (m.headers && m.headers[name]) || "",
       createDraftReply: (text) => {
         // Like Apps Script: the From header is split on commas, so a quoted display name
         // with a comma fails.
@@ -141,6 +142,12 @@ export function loadAddon({ gmail, scriptProps = {}, userProps, fetch, me = "joe
     CardService: cardService,
     GmailApp: gmail ? gmail.GmailApp : undefined,
     PropertiesService: { getUserProperties: () => user, getScriptProperties: () => script },
+    ScriptApp: { getOAuthToken: () => "oauth-token" },
+    Utilities: {
+      Charset: { UTF_8: "UTF_8" },
+      base64Encode: (str) => Buffer.from(String(str), "utf8").toString("base64"),
+      base64EncodeWebSafe: (str) => Buffer.from(String(str), "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_"),
+    },
     Session: { getActiveUser: () => ({ getEmail: () => me }), getEffectiveUser: () => ({ getEmail: () => me }) },
     UrlFetchApp: {
       fetch(url, options) {
