@@ -84,7 +84,10 @@ export async function generateReply(
       throw new GenerationError(`The model request failed: ${(e as Error).message}`, "upstream_error");
     }
     const text = textOf(response);
-    const result = parseModelOutput(text);
+    const result: ReturnType<typeof parseModelOutput> =
+      response.stop_reason === "max_tokens"
+        ? { ok: false, reason: "The response was cut off before the JSON was complete. Keep it shorter." }
+        : parseModelOutput(text);
     if (result.ok) return result.value;
     lastReason = result.reason;
     messages.push(

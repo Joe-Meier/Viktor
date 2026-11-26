@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AbsurdityControl from "./AbsurdityControl";
 import { formatFullDate, initials } from "./format";
 import { statusLine } from "@/lib/registry";
 import type { LevelId, Registry, Thread } from "@/lib/types";
+
+/** Enough rows to show the whole draft without scrolling, within reason. */
+function draftRows(text: string): number {
+  const lines = text.split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 100)), 0);
+  return Math.min(18, Math.max(5, lines + 1));
+}
 
 export interface Notice {
   kind: "setup" | "error";
@@ -32,6 +38,15 @@ export default function ThreadView(props: Props) {
   const last = thread.messages[thread.messages.length - 1];
   const awaitingDraft = last?.from === "them" && !thread.draft;
   const replyBoxOpen = showReplyBox || (!thread.draft && last?.from === "me");
+  const composerRef = useRef<HTMLElement>(null);
+  const draftStamp = thread.draft?.createdAt;
+
+  // Bring a freshly generated draft (or the pending-draft placeholder) into view.
+  useEffect(() => {
+    if (draftStamp || busy) {
+      composerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [draftStamp, busy]);
 
   const copy = async () => {
     if (!thread.draft) return;
@@ -121,7 +136,7 @@ export default function ThreadView(props: Props) {
         )}
 
         {(thread.draft || awaitingDraft) && (
-          <section className="composer" aria-label="Reply draft">
+          <section className="composer" aria-label="Reply draft" ref={composerRef}>
             <div className="composer-head">
               <span className="composer-title">
                 {thread.draft ? "Draft reply" : "Reply"}
@@ -134,7 +149,7 @@ export default function ThreadView(props: Props) {
                 className="draft"
                 value={thread.draft.text}
                 onChange={(e) => props.onDraftChange(e.target.value)}
-                rows={Math.min(14, Math.max(6, thread.draft.text.split("\n").length + 2))}
+                rows={draftRows(thread.draft.text)}
                 aria-label="Reply draft text"
                 disabled={busy}
               />

@@ -129,6 +129,20 @@ describe("mergeRegistry", () => {
 });
 
 describe("helpers", () => {
+  it("stores new registry entries in sentence case", () => {
+    const after = mergeRegistry(
+      emptyRegistry(),
+      {
+        ...emptyUpdate(),
+        newUncles: [{ name: "Walt", role: "keeps the minutes", authority: ["vendor mail"], traits: ["prefers paper"] }],
+        newFacts: ["the cabin has no internet"],
+      },
+      1,
+    );
+    expect(after.uncles[0]).toMatchObject({ role: "Keeps the minutes", authority: ["Vendor mail"], traits: ["Prefers paper"] });
+    expect(after.facts[0].text).toBe("The cabin has no internet");
+  });
+
   it("cleans uncle names", () => {
     expect(cleanUncleName("  Uncle  Raymond ")).toBe("Raymond");
     expect(cleanUncleName("Walt")).toBe("Walt");

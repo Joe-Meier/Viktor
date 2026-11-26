@@ -124,6 +124,15 @@ describe("POST /api/reply", () => {
     expect(create.mock.calls[1][0].messages[2].content).toContain("more than one new uncle");
   });
 
+  it("retries when the first output was cut off at max_tokens", async () => {
+    create
+      .mockResolvedValueOnce({ ...text('{"reply": "Hi Dana,'), stop_reason: "max_tokens" })
+      .mockResolvedValueOnce(text(JSON.stringify(goodOutput)));
+    const res = await POST(requestFor(sampleBody()));
+    expect(res.status).toBe(200);
+    expect(create.mock.calls[1][0].messages[2].content).toContain("cut off");
+  });
+
   it("gives up with a clear error after two bad outputs", async () => {
     create.mockResolvedValue(text("not json"));
     const res = await POST(requestFor(sampleBody()));

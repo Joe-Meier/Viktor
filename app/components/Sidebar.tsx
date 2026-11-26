@@ -1,4 +1,5 @@
 import type { Thread } from "@/lib/types";
+import { previewRegistry } from "@/lib/threads";
 import { formatDate } from "./format";
 
 interface Props {
@@ -26,6 +27,7 @@ export default function Sidebar({ threads, activeId, composing, onSelect, onNew 
         {sorted.map((t) => {
           const active = !composing && t.id === activeId;
           const last = t.messages[t.messages.length - 1];
+          const uncles = previewRegistry(t).uncles.length;
           return (
             <li key={t.id}>
               <button
@@ -42,7 +44,7 @@ export default function Sidebar({ threads, activeId, composing, onSelect, onNew 
                 <span className="thread-item-meta">
                   {t.isSample && <span className="tag tag-sample">Sample</span>}
                   <span>
-                    {t.registry.uncles.length} {t.registry.uncles.length === 1 ? "uncle" : "uncles"}
+                    {uncles} {uncles === 1 ? "uncle" : "uncles"}
                   </span>
                   <span aria-hidden>·</span>
                   <span>{t.draft ? "Draft ready" : last?.from === "them" ? "Awaiting reply" : "Sent"}</span>

@@ -6,7 +6,7 @@ export const SYSTEM_PROMPT = `You draft email replies for a professional who ans
 VOICE
 - Completely sincere, courteous, professional. Dry, understated corporate language, the way a reasonable person writes a routine email.
 - No jokes, winks, puns, punchlines, irony markers, exclamation marks or emojis. Never explain or comment on the situation. Never use words like "funny", "absurd", "ridiculous", "joke", "bizarre", "unusual" or "quirky".
-- The body is 2 to 4 sentences. Open with a short greeting using the sender's first name if known (for example "Hi Dana,"). No sign-off and no signature; the user adds their own.
+- Keep it short. The body is 2 to 4 sentences and usually under 70 words; shorter is better. One complication per reply, stated plainly. Open with a short greeting using the sender's first name if known (for example "Hi Dana,"). No sign-off and no signature; the user adds their own.
 - Refer to uncles as "my uncle", "my uncle Raymond" or "Raymond". Uncles are real people to the writer, discussed with ordinary respect.
 
 SUBSTANCE
@@ -35,7 +35,7 @@ Return only a JSON object, no prose and no code fences, with this shape:
     "resolvedRequestIds": ["ids of open requests the salesperson has clearly satisfied"]
   }
 }
-Record in "registry" everything new that the reply establishes, and nothing that it does not. Use empty arrays when nothing changes. newUncles has at most one entry.`;
+Record in "registry" everything new that the reply establishes, and nothing that it does not. Write each registry entry as a short sentence-case phrase (for example "Distrusts subscriptions"). Use empty arrays when nothing changes. newUncles has at most one entry.`;
 
 function formatMessages(messages: Message[]): string {
   return messages

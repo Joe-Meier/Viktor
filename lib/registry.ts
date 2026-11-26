@@ -5,6 +5,12 @@ export function cleanUncleName(name: string): string {
   return name.trim().replace(/^uncle\s+/i, "").trim();
 }
 
+/** Sentence case for registry entries: "prefers paper" -> "Prefers paper". */
+export const sentenceCase = (s: string) => {
+  const t = s.trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : t;
+};
+
 const key = (s: string) => cleanUncleName(s).toLowerCase().replace(/\s+/g, " ");
 const textKey = (s: string) =>
   s.trim().toLowerCase().replace(/[.\s]+$/g, "").replace(/\s+/g, " ");
@@ -13,7 +19,7 @@ function appendUnique(list: string[], additions: string[]): string[] {
   const seen = new Set(list.map(textKey));
   const out = [...list];
   for (const raw of additions) {
-    const item = raw.trim();
+    const item = sentenceCase(raw);
     if (!item || seen.has(textKey(item))) continue;
     seen.add(textKey(item));
     out.push(item);
@@ -72,7 +78,7 @@ export function mergeRegistry(
     const uncle: Uncle = {
       id: nextId("uncle", uncles.map((u) => u.id)),
       name,
-      role: proposed.role.trim(),
+      role: sentenceCase(proposed.role),
       authority: appendUnique([], proposed.authority),
       traits: appendUnique([], proposed.traits),
       introducedTurn: turn,
@@ -91,7 +97,7 @@ export function mergeRegistry(
   const facts = [...registry.facts];
   const factKeys = new Set(facts.map((f) => textKey(f.text)));
   for (const raw of update.newFacts) {
-    const text = raw.trim();
+    const text = sentenceCase(raw);
     if (!text || factKeys.has(textKey(text))) continue;
     factKeys.add(textKey(text));
     facts.push({ id: nextId("fact", facts.map((f) => f.id)), text, introducedTurn: turn });
@@ -102,7 +108,7 @@ export function mergeRegistry(
     `${[...parties].map(key).sort().join("|")}::${textKey(subject)}`;
   const disKeys = new Set(disagreements.map((d) => disKey(d.parties, d.subject)));
   for (const d of update.newDisagreements) {
-    const subject = d.subject.trim();
+    const subject = sentenceCase(d.subject);
     const parties = d.parties.map(canonicalName).filter(Boolean);
     if (!subject || disKeys.has(disKey(parties, subject))) continue;
     disKeys.add(disKey(parties, subject));
@@ -120,7 +126,7 @@ export function mergeRegistry(
   );
   const reqKeys = new Set(requests.map((r) => textKey(r.request)));
   for (const r of update.newRequests) {
-    const request = r.request.trim();
+    const request = sentenceCase(r.request);
     if (!request || reqKeys.has(textKey(request))) continue;
     reqKeys.add(textKey(request));
     requests.push({
