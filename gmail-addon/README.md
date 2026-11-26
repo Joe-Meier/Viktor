@@ -21,7 +21,7 @@ You need: your Google account, and an Anthropic API key (console.anthropic.com >
    - **Web:** in the narrow bar on the right edge, click the uncle icon (an elderly man with a cane). The panel opens beside the email.
    - **Phone:** open the email in the Gmail app and scroll to the bottom; tap the **Per My Last Uncle** row.
 
-**The first time only**, the panel asks for access: click **Authorize access** and pick your account. Google lists what it can do: read the email you have open, make drafts when you ask, **send email on your behalf** (only when you tap Send now), connect to an external service (Anthropic and Gmail's API), and see your email address (so it can tell your messages from theirs). Because this is your own unpublished script, Google may show **"Google hasn't verified this app"**: click **Advanced** > **Go to Per My Last Uncle (unsafe)**. That warning is about the app not being reviewed by Google; it's your own code running in your own account. On a company Google Workspace account an administrator may have blocked unverified scripts; if Install or authorization is refused, that's why.
+**The first time only**, the panel asks for access: click **Authorize access** and pick your account. Google lists what it can do. The big one is **"Read, compose, send, and permanently delete all your email from Gmail"**: that's the full-mail permission Gmail's script tools need to send a reply. The add-on only uses it to send when you tap Send now. It never deletes anything. The others: run as a Gmail add-on, read the email you have open, manage drafts when you use the add-on, connect to an external service (Anthropic), and see your email address (so it can tell your messages from theirs). Because this is your own unpublished script, Google may show **"Google hasn't verified this app"**: click **Advanced** > **Go to Per My Last Uncle (unsafe)**. That warning is about the app not being reviewed by Google; it's your own code running in your own account. On a company Google Workspace account an administrator may have blocked unverified scripts; if Install or authorization is refused, that's why.
 
 ## Using it
 
@@ -29,9 +29,10 @@ You need: your Google account, and an Anthropic API key (console.anthropic.com >
 - **Generate reply** writes a 2-4 sentence reply that answers the actual pitch and adds one complication. Edit the text in the box as much as you like.
 - **Complicate matters** writes a different version that goes a little further than the one in the box.
 - **Create Gmail draft** puts the text from the box into a reply draft in this thread. Review and send it from Gmail.
-  - One exception: when the sender's name has a comma in it (`"Silence, Brand!" <…@substack.com>`), Gmail's script tools can't reply to it. The add-on then opens a new draft to their bare address with "Re: <subject>". That draft isn't linked to the conversation. Keeping it in the thread would need the much broader "manage drafts and send email" permission, which this add-on doesn't ask for.
-- **Send reply** sends the text in the box without going through drafts. It opens a review card first: **To** (their bare address), **Subject** (`Re: …`) and the full reply, with **Send now** and **Back**. Back sends nothing.
-  - Send now posts the reply through the Gmail API as a reply in the same conversation (in-thread, with the right reply headers). This works for comma-name senders too.
+  - One exception: when the sender's name has a comma in it (`"Silence, Brand!" <…@substack.com>`), Gmail's script tools can't reply to it. The add-on then opens a new draft to their bare address with "Re: <subject>". That draft isn't linked to the conversation. Apps Script's draft tools can't attach a new draft to a thread, so it can't be kept in the conversation.
+- **Send reply** sends the text in the box without going through drafts. It opens a review card first: **To** (their bare address, or their Reply-To address if the email has one), **Subject** (`Re: …`) and the full reply, with **Send now** and **Back**. Back sends nothing.
+  - Send now sends it as a normal Gmail reply in the same conversation.
+  - Comma-name senders (like `"Silence, Brand!"`) are the exception: Gmail's script tools can't reply to them. The review card says **"Arrives as a new email, not in this conversation"**, and Send now sends a new email to their bare address with "Re: <subject>". It may show up as a separate conversation on both sides.
   - On success the panel says "Sent. The registry is now canon." and the draft's changes become canon, as if you'd tapped I sent it.
   - If Gmail refuses, you see its error, nothing is sent, and your reply and its *(in draft)* changes stay.
   - If you already made a Gmail draft of the same reply, delete that draft after sending.
@@ -62,4 +63,6 @@ You need: your Google account, and an Anthropic API key (console.anthropic.com >
 
 ## Updating from an earlier version
 
-Paste the new `Code.gs`, `Shared.gs` and `appsscript.json` over the old ones and save. When `appsscript.json` adds a permission (Send reply added "send email on your behalf"), the panel shows **Authorize access** again the next time you open an email. Approve it the same way as the first time. The test deployment itself doesn't need to be reinstalled.
+Paste the new `Code.gs`, `Shared.gs` and `appsscript.json` over the old ones and save. When `appsscript.json` changes a permission (sending now uses the full-mail "Read, compose, send, and permanently delete all your email from Gmail" one), the panel shows **Authorize access** again the next time you open an email. Approve it the same way as the first time. The test deployment itself doesn't need to be reinstalled.
+
+If an earlier version gave you "Gmail API has not been used in project … or it is disabled", that version sent through Gmail's web API. This one doesn't use it. Paste the new `appsscript.json` as is: it has no `dependencies` block. If you added the Gmail service under **Services**, you can remove it.

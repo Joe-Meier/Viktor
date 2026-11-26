@@ -4,12 +4,11 @@
  *
  * "Create Gmail draft" opens a reply draft for you to review and send yourself. "Send reply"
  * only shows a confirmation card; the one code path that sends email is "Send now" on that
- * card (actionSendNow -> gmailSendReply_).
+ * card (actionSendNow -> gmailSendReply_), which sends with GmailApp.
  */
 
 var UNCLE_LOGO = "https://www.gstatic.com/images/icons/material/system/2x/elderly_black_48dp.png";
 var UNCLE_API_URL = "https://api.anthropic.com/v1/messages";
-var UNCLE_GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 var UNCLE_TIME_BUDGET_MS = 12000; // skip the retry after this; add-on actions stop at ~30 s
 
 /* ---------- Triggers ---------- */
@@ -102,9 +101,9 @@ function actionCreateDraft(e) {
 /**
  * A reply draft in the thread when Gmail allows it. When the sender's display name has a
  * comma (GmailApp can't parse it) or createDraftReply fails for another reason, a new draft
- * to the bare address with "Re: <subject>". That one is not threaded: keeping it in the
- * conversation needs the Gmail API with the broad gmail.compose scope, which this add-on
- * doesn't ask for. Either way nothing is sent.
+ * to the bare address with "Re: <subject>". That one is not threaded: GmailApp.createDraft
+ * has no thread option, and the Gmail REST API isn't enabled on Apps Script's default
+ * Cloud project. Either way nothing is sent.
  */
 function draftReply_(ctx, target, text) {
   var from = target.getFrom();
@@ -123,16 +122,27 @@ function draftReply_(ctx, target, text) {
   return GmailApp.createDraft(address, uncleReplySubject(subject || ctx.subject), text);
 }
 
-/** Who a sidebar send goes to, the subject and the threading headers. */
+/**
+ * Who a sidebar send goes to and how. GmailMessage's reply goes to the message's Reply-To
+ * (or From) and stays in the thread. Apps Script's reply options have no "to", and reply()
+ * parses that header the same way createDraftReply does, so a display name with a comma
+ * ("Silence, Brand!" <x@y.com>) fails with "Invalid email". Those senders get a new email
+ * to the bare address with GmailApp instead; it is not threaded, and the
+ * confirmation card says so.
+ */
 function sendPlan_(ctx, text) {
-  var target = ctx.replyTarget;
-  if (!target) throw new Error("There is no message from them in this thread to reply to.");
-  var to = uncleReplyAddress(target.getFrom());
-  if (!to) throw new Error("Couldn't read the sender's address from: " + target.getFrom());
-  var subject = "";
-  try { subject = target.getSubject(); } catch (err) { /* use the thread's subject */ }
-  subject = uncleReplySubject(subject || ctx.subject);
-  return { to: to, subject: subject, text: text, signature: uncleSendSignature(to, subject, text) };
+  var target = ctx.replyTarget || ctx.message;
+  if (!target) throw new Error("There is no message in this thread to reply to.");
+  var header = uncleReplyHeader(safeCall_(target, "getReplyTo"), target.getFrom());
+  var to = uncleReplyAddress(header);
+  if (!to) throw new Error("Couldn't read the sender's address from: " + header);
+  var subject = uncleReplySubject(safeCall_(target, "getSubject") || ctx.subject);
+  var threaded = !uncleNeedsBareReply(header);
+  return { to: to, subject: subject, text: text, threaded: threaded, target: target, signature: uncleSendSignature(to, subject, text) };
+}
+
+function safeCall_(obj, method) {
+  try { return obj && typeof obj[method] === "function" ? String(obj[method]() || "") : ""; } catch (err) { return ""; }
 }
 
 /** "Send reply": never sends. Saves the edited text and shows the confirmation card. */
@@ -171,25 +181,14 @@ function actionSendNow(e) {
   return backToThread_(ctx, state, "Sent. The registry is now canon." + (saved.ok ? "" : " " + saveNotice_(saved)));
 }
 
-/** POST the reply to Gmail API users.messages.send, threaded under the message it answers. */
+/** The one place that sends: a threaded reply, or a new email for comma-name senders. */
 function gmailSendReply_(ctx, plan) {
-  var target = ctx.replyTarget;
-  var header = function (name) {
-    try { return String(target.getHeader(name) || ""); } catch (err) { return ""; }
-  };
-  var mime = uncleBuildReplyMime(
-    { to: plan.to, subject: plan.subject, inReplyTo: header("Message-ID"), references: header("References"), text: plan.text },
-    function (str) { return Utilities.base64Encode(str, Utilities.Charset.UTF_8); },
-  );
-  var res = UrlFetchApp.fetch(UNCLE_GMAIL_SEND_URL, {
-    method: "post",
-    contentType: "application/json",
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-    payload: JSON.stringify({ raw: Utilities.base64EncodeWebSafe(mime, Utilities.Charset.UTF_8), threadId: ctx.threadId }),
-    muteHttpExceptions: true,
-  });
-  var code = res.getResponseCode();
-  if (code < 200 || code >= 300) throw new Error(uncleGmailErrorMessage(code, res.getContentText()));
+  try {
+    if (plan.threaded) plan.target.reply(plan.text);
+    else GmailApp.sendEmail(plan.to, plan.subject, plan.text);
+  } catch (err) {
+    throw new Error("Gmail refused to send: " + errMessage_(err) + (/permission|authori/i.test(errMessage_(err)) ? " Reopen the email; if Gmail asks, authorize the add-on again." : ""));
+  }
 }
 
 function backToThread_(ctx, state, notice) {
@@ -430,6 +429,9 @@ function confirmSendCard_(ctx, plan) {
   var s = CardService.newCardSection()
     .addWidget(text_("<b>To:</b> " + esc_(plan.to)))
     .addWidget(text_("<b>Subject:</b> " + esc_(plan.subject)))
+    .addWidget(text_(plan.threaded
+      ? "Goes out as a reply in this conversation."
+      : "<b>Arrives as a new email, not in this conversation.</b> Gmail can't reply in-thread to a sender whose name has a comma, so this goes to their bare address with \"Re:\" in the subject."))
     .addWidget(text_(esc_(plan.text).replace(/\r?\n/g, "<br>")))
     .addWidget(text_("Sending makes this reply's registry changes canon. If you already made a Gmail draft of it, delete that draft afterwards."))
     .addWidget(

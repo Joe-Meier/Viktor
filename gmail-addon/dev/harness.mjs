@@ -89,6 +89,17 @@ export function fakeGmail(threadId, subject, messages, me) {
       getThread: () => thread,
       getSubject: () => m.subject ?? subject,
       getHeader: (name) => (m.headers && m.headers[name]) || "",
+      getReplyTo: () => m.replyToHeader || "",
+      reply: (text) => {
+        // Same header parsing as createDraftReply.
+        const header = m.replyToHeader || m.from;
+        const first = String(header).split(",")[0].trim();
+        if (m.failReply) throw new Error(m.failReply);
+        if (String(header).split(",").length > 1 && !/@/.test(first)) throw new Error(`Invalid email: ${first.replace(/^"/, "")}`);
+        const sent = { id: `sent-${sent_.length + 1}`, kind: "reply", inReplyTo: m.id, threadId, to: header, body: text };
+        sent_.push(sent);
+        return wrap(m);
+      },
       createDraftReply: (text) => {
         // Like Apps Script: the From header is split on commas, so a quoted display name
         // with a comma fails.
@@ -104,11 +115,19 @@ export function fakeGmail(threadId, subject, messages, me) {
   }
   /** Drafts made outside the thread (GmailApp.createDraft). */
   const looseDrafts = [];
+  /** Everything sent, by reply() or GmailApp.sendEmail. */
+  const sent_ = [];
   return {
     thread,
     messages,
     looseDrafts,
+    sent: sent_,
     GmailApp: {
+      sendEmail(recipient, sendSubject, body) {
+        if (/[<>,"]/.test(recipient)) throw new Error(`Invalid email: ${recipient}`);
+        sent_.push({ id: `sent-${sent_.length + 1}`, kind: "new", to: recipient, subject: sendSubject, body });
+        return this;
+      },
       setCurrentMessageAccessToken() {},
       createDraft(recipient, draftSubject, body) {
         if (/[<>,"]/.test(recipient)) throw new Error(`Invalid email: ${recipient}`);
@@ -142,12 +161,6 @@ export function loadAddon({ gmail, scriptProps = {}, userProps, fetch, me = "joe
     CardService: cardService,
     GmailApp: gmail ? gmail.GmailApp : undefined,
     PropertiesService: { getUserProperties: () => user, getScriptProperties: () => script },
-    ScriptApp: { getOAuthToken: () => "oauth-token" },
-    Utilities: {
-      Charset: { UTF_8: "UTF_8" },
-      base64Encode: (str) => Buffer.from(String(str), "utf8").toString("base64"),
-      base64EncodeWebSafe: (str) => Buffer.from(String(str), "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_"),
-    },
     Session: { getActiveUser: () => ({ getEmail: () => me }), getEffectiveUser: () => ({ getEmail: () => me }) },
     UrlFetchApp: {
       fetch(url, options) {

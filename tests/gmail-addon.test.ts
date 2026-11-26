@@ -64,7 +64,6 @@ function setup(
     model?: string;
     responses?: Array<{ code: number; text: string }>;
     messages?: Array<Record<string, unknown>>;
-    gmailSend?: { code: number; text: string };
   } = {},
 ) {
   const messages = opts.messages ?? [{ id: "m1", from: "Marcus Bell <marcus@shiftwise.io>", date: 1_000, body: COLD }];
@@ -77,8 +76,7 @@ function setup(
     gmail,
     scriptProps,
     me: ME,
-    fetch: (url: string) => {
-      if (url.startsWith("https://gmail.googleapis.com/")) return opts.gmailSend ?? { code: 200, text: '{"id":"sent-1","threadId":"thread-1"}' };
+    fetch: () => {
       const next = queue.shift();
       if (!next) throw new Error("unexpected extra fetch");
       return next;
@@ -407,24 +405,11 @@ describe("Gmail add-on: the panel, driven like Gmail does", () => {
   });
 });
 
-const GMAIL_SEND = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
-const sends = (addon: { fetches: Array<{ url: string; options: { payload: string; method: string; headers: Record<string, string> } }> }) => addon.fetches.filter((f) => f.url.startsWith("https://gmail.googleapis.com/"));
-const decodeRaw = (raw: string) => {
-  const mime = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
-  const [head, body] = mime.split("\r\n\r\n");
-  return { head, text: Buffer.from(body.replace(/\r\n/g, ""), "base64").toString("utf8") };
-};
+type Sent = { kind: "reply" | "new"; to: string; subject?: string; body: string; inReplyTo?: string; threadId?: string };
+const sends = (gmail: { sent: Sent[] }) => gmail.sent;
 
 describe("Gmail add-on: Send reply (confirm first, then Send now)", () => {
-  const withHeaders = (from: string) => [
-    {
-      id: "m1",
-      from,
-      date: 1_000,
-      body: COLD,
-      headers: { "Message-ID": "<abc@mail.shiftwise.io>", References: "<root@mail.shiftwise.io>" },
-    },
-  ];
+  const msg = (from: string, extra: Record<string, unknown> = {}) => [{ id: "m1", from, date: 1_000, body: COLD, ...extra }];
 
   function generated(opts: Parameters<typeof setup>[0] = {}) {
     const env = setup(opts);
@@ -434,41 +419,28 @@ describe("Gmail add-on: Send reply (confirm first, then Send now)", () => {
   }
 
   it("shows a confirmation card first and sends nothing until Send now", () => {
-    const { addon, card } = generated({ messages: withHeaders("Marcus Bell <marcus@shiftwise.io>") });
+    const { addon, gmail, card } = generated({ messages: msg("Marcus Bell <marcus@shiftwise.io>") });
     const confirm = pushed(click(addon, card, "Send reply", { reply: "Hi Marcus,\n\nMy uncle will decide." }));
-    expect(sends(addon)).toEqual([]);
-    expect(confirm).not.toBeNull();
+    expect(sends(gmail)).toEqual([]);
     const text = cardText(confirm);
     expect(text).toContain("Send this reply?");
     expect(text).toContain("To: marcus@shiftwise.io");
     expect(text).toContain("Subject: Re: Cut scheduling time in half");
+    expect(text).toContain("Goes out as a reply in this conversation.");
     expect(text).toContain("Hi Marcus,\n\nMy uncle will decide.");
     expect(buttons(confirm).map((b) => b.label)).toEqual(["Send now", "Back"]);
-    // Back sends nothing.
     const back = addon.g[buttons(confirm).find((b) => b.label === "Back")!.fn!]();
     expect(JSON.stringify(back)).toContain("popCard");
-    expect(sends(addon)).toEqual([]);
-    // Pending is still tentative.
+    expect(sends(gmail)).toEqual([]);
     expect(cardText(addon.g.onGmailMessage(event("m1")))).toContain("(in draft)");
   });
 
-  it("Send now sends a threaded reply with In-Reply-To and References, then commits canon", () => {
-    const { addon, card } = generated({ messages: withHeaders("Marcus Bell <marcus@shiftwise.io>") });
+  it("Send now replies in the thread with GmailApp's message.reply, then commits canon", () => {
+    const { addon, gmail, card } = generated({ messages: msg("Marcus Bell <marcus@shiftwise.io>") });
     const confirm = pushed(click(addon, card, "Send reply", { reply: "Hi Marcus,\n\nMy uncle will decide. Ünïcode ok." }));
     const res = click(addon, confirm, "Send now");
-    const [req] = sends(addon);
-    expect(req.url).toBe(GMAIL_SEND);
-    expect(req.options.method).toBe("post");
-    expect(req.options.headers.Authorization).toBe("Bearer oauth-token");
-    const payload = JSON.parse(req.options.payload);
-    expect(payload.threadId).toBe("thread-1");
-    const { head, text } = decodeRaw(payload.raw);
-    expect(head).toContain("To: marcus@shiftwise.io");
-    expect(head).toContain("Subject: Re: Cut scheduling time in half");
-    expect(head).toContain("In-Reply-To: <abc@mail.shiftwise.io>");
-    expect(head).toContain("References: <root@mail.shiftwise.io> <abc@mail.shiftwise.io>");
-    expect(head).not.toMatch(/^From:/m);
-    expect(text).toBe("Hi Marcus,\r\n\r\nMy uncle will decide. Ünïcode ok.");
+    expect(sends(gmail)).toHaveLength(1);
+    expect(sends(gmail)[0]).toMatchObject({ kind: "reply", inReplyTo: "m1", threadId: "thread-1", body: "Hi Marcus,\n\nMy uncle will decide. Ünïcode ok." });
     const after = cardOf(res);
     expect(cardText(after)).toContain("Sent. The registry is now canon.");
     expect(cardText(after)).not.toContain("(in draft)");
@@ -476,26 +448,30 @@ describe("Gmail add-on: Send reply (confirm first, then Send now)", () => {
     expect(JSON.stringify(res)).toContain("popToRoot");
   });
 
-  it("sends to the bare address when the sender's name has a comma, still in the thread", () => {
-    const { addon, card } = generated({ messages: withHeaders('"Silence, Brand!" <silencebrand@substack.com>') });
+  it("shows the Reply-To address when the message has one, since that's where reply() goes", () => {
+    const { addon, card } = generated({ messages: msg("Marcus Bell <marcus@shiftwise.io>", { replyToHeader: "Sales <sales@shiftwise.io>" }) });
+    expect(cardText(pushed(click(addon, card, "Send reply")))).toContain("To: sales@shiftwise.io");
+  });
+
+  it("comma-name senders get a new email to the bare address, and the card says it's not threaded", () => {
+    const { addon, gmail, card } = generated({ messages: msg('"Silence, Brand!" <silencebrand@substack.com>') });
     const confirm = pushed(click(addon, card, "Send reply", { reply: "Hi,\n\nUncle Raymond has questions." }));
     expect(cardText(confirm)).toContain("To: silencebrand@substack.com");
-    click(addon, confirm, "Send now");
-    const payload = JSON.parse(sends(addon)[0].options.payload);
-    expect(payload.threadId).toBe("thread-1");
-    expect(decodeRaw(payload.raw).head).toMatch(/^To: silencebrand@substack\.com\r?$/m);
+    expect(cardText(confirm)).toContain("Arrives as a new email, not in this conversation.");
+    const res = click(addon, confirm, "Send now");
+    expect(sends(gmail)).toEqual([
+      expect.objectContaining({ kind: "new", to: "silencebrand@substack.com", subject: "Re: Cut scheduling time in half", body: "Hi,\n\nUncle Raymond has questions." }),
+    ]);
+    expect(cardText(cardOf(res))).toContain("Sent. The registry is now canon.");
   });
 
   it("keeps the draft tentative and shows Gmail's error when the send fails", () => {
-    const { addon, card } = generated({
-      messages: withHeaders("Marcus Bell <marcus@shiftwise.io>"),
-      gmailSend: { code: 403, text: '{"error":{"code":403,"message":"Request had insufficient authentication scopes."}}' },
-    });
+    const { addon, gmail, card } = generated({ messages: msg("Marcus Bell <marcus@shiftwise.io>", { failReply: "Service invoked too many times for one day: email." }) });
     const confirm = pushed(click(addon, card, "Send reply"));
-    const res = click(addon, confirm, "Send now");
-    const failed = cardOf(res);
+    const failed = cardOf(click(addon, confirm, "Send now"));
+    expect(sends(gmail)).toEqual([]);
     expect(cardText(failed)).toContain("The reply was not sent");
-    expect(cardText(failed)).toContain("Gmail refused to send (HTTP 403): Request had insufficient authentication scopes.");
+    expect(cardText(failed)).toContain("Gmail refused to send: Service invoked too many times for one day: email.");
     expect(cardText(failed)).toContain("Nothing was sent.");
     const thread = cardOf(click(addon, failed, "Back"));
     expect(cardText(thread)).toContain("(in draft)");
@@ -503,22 +479,23 @@ describe("Gmail add-on: Send reply (confirm first, then Send now)", () => {
   });
 
   it("refuses to send if the reply changed after review", () => {
-    const { addon, card } = generated({ messages: withHeaders("Marcus Bell <marcus@shiftwise.io>") });
+    const { addon, gmail, card } = generated({ messages: msg("Marcus Bell <marcus@shiftwise.io>") });
     const confirm = pushed(click(addon, card, "Send reply", { reply: "Version A" }));
-    // The text is edited and re-saved elsewhere (e.g. Complicate matters) before Send now.
     click(addon, card, "Send reply", { reply: "Version B" });
     const res = click(addon, confirm, "Send now");
-    expect(sends(addon)).toEqual([]);
+    expect(sends(gmail)).toEqual([]);
     expect(cardText(cardOf(res))).toContain("changed since you reviewed it");
   });
 
-  it("no button other than Send now ever reaches Gmail's send endpoint", () => {
-    const { addon } = generated({ messages: withHeaders("Marcus Bell <marcus@shiftwise.io>"), responses: [modelResponse(FIRST), modelResponse(FIRST)] });
-    for (const label of ["Send reply", "Create Gmail draft", "Complicate matters", "Reload", "Discard draft"]) {
-      const fresh = addon.g.onGmailMessage(event("m1"));
-      if (buttons(fresh).some((b) => b.label === label)) click(addon, fresh, label);
+  it("no button other than Send now ever sends", () => {
+    for (const from of ["Marcus Bell <marcus@shiftwise.io>", '"Silence, Brand!" <silencebrand@substack.com>']) {
+      const { addon, gmail } = generated({ messages: msg(from), responses: [modelResponse(FIRST), modelResponse(FIRST)] });
+      for (const label of ["Send reply", "Create Gmail draft", "Complicate matters", "Reload", "Discard draft"]) {
+        const fresh = addon.g.onGmailMessage(event("m1"));
+        if (buttons(fresh).some((b) => b.label === label)) click(addon, fresh, label);
+      }
+      expect(sends(gmail)).toEqual([]);
     }
-    expect(sends(addon)).toEqual([]);
   });
 });
 
@@ -543,14 +520,15 @@ describe("Gmail add-on: manifest and source", () => {
         "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
         "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
         "https://www.googleapis.com/auth/gmail.addons.execute",
-        "https://www.googleapis.com/auth/gmail.send",
+        "https://mail.google.com/",
         "https://www.googleapis.com/auth/script.external_request",
         "https://www.googleapis.com/auth/userinfo.email",
       ].sort(),
     );
-    expect(manifest.urlFetchWhitelist).toEqual(["https://api.anthropic.com/", "https://gmail.googleapis.com/"]);
-    expect(manifest.oauthScopes).not.toContain("https://mail.google.com/");
+    expect(manifest.urlFetchWhitelist).toEqual(["https://api.anthropic.com/"]);
+    expect(manifest.oauthScopes).not.toContain("https://www.googleapis.com/auth/gmail.send");
     expect(manifest.oauthScopes).not.toContain("https://www.googleapis.com/auth/gmail.modify");
+    expect(manifest.dependencies).toBeUndefined();
     const g = loadAddon().g;
     expect(typeof g[manifest.addOns.common.homepageTrigger.runFunction]).toBe("function");
     expect(typeof g[manifest.addOns.gmail.contextualTriggers[0].onTriggerFunction]).toBe("function");
@@ -565,14 +543,13 @@ describe("Gmail add-on: manifest and source", () => {
       return code.slice(start, end + 3);
     };
     const sender = fnBody("gmailSendReply_");
-    expect(sender).toContain("UNCLE_GMAIL_SEND_URL");
-    const decl = 'var UNCLE_GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";';
-    expect(source.split(decl)).toHaveLength(2);
-    const rest = source.replace(sender, "").replace(decl, "");
-    // Outside that one function: no send API of any kind, and the send URL is only declared.
+    expect(sender).toContain("plan.target.reply(plan.text)");
+    expect(sender).toContain("GmailApp.sendEmail(plan.to, plan.subject, plan.text)");
+    const rest = source.replace(sender, "");
+    // Outside that one function: no send API of any kind, and no Gmail REST calls.
     expect(rest).not.toMatch(/sendEmail|\.send\(|MailApp|sendDraft|\.forward\(|\.reply\(|\.replyAll\(|messages\/send|drafts\/send/);
-    expect(rest).not.toContain("UNCLE_GMAIL_SEND_URL");
-    expect(rest).not.toContain("gmail.googleapis.com");
+    expect(source).not.toContain("gmail.googleapis.com");
+    expect(source).not.toContain("getOAuthToken");
     // Exactly one caller, inside actionSendNow.
     expect(source.match(/gmailSendReply_\(/g)).toHaveLength(2);
     expect(fnBody("actionSendNow")).toContain("gmailSendReply_(");

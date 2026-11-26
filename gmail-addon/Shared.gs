@@ -533,28 +533,10 @@ function uncleReplySubject(subject) {
   return "Re: " + (s || "(no subject)");
 }
 
-/** Strip CR/LF so a value can't add headers. */
-function uncleHeaderValue_(v) {
-  return String(v || "").replace(/[\r\n]+/g, " ").trim();
-}
-
-/**
- * The RFC 2822 reply for Gmail API users.messages.send. b64(str) must return standard
- * base64 of the UTF-8 bytes. Gmail fills in From with the signed-in account.
- * reply: { to, subject, inReplyTo?, references?, text }
- */
-function uncleBuildReplyMime(reply, b64) {
-  var subject = uncleHeaderValue_(reply.subject);
-  var lines = ["To: " + uncleHeaderValue_(reply.to)];
-  lines.push("Subject: " + (/^[\x20-\x7e]*$/.test(subject) ? subject : "=?UTF-8?B?" + b64(subject) + "?="));
-  var inReplyTo = uncleHeaderValue_(reply.inReplyTo);
-  if (inReplyTo) {
-    lines.push("In-Reply-To: " + inReplyTo);
-    lines.push("References: " + uncleHeaderValue_((reply.references ? reply.references + " " : "") + inReplyTo));
-  }
-  lines.push("MIME-Version: 1.0", "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "");
-  var body = b64(String(reply.text || "").replace(/\r?\n/g, "\r\n"));
-  return lines.join("\r\n") + "\r\n" + (body.match(/.{1,76}/g) || [""]).join("\r\n") + "\r\n";
+/** The header GmailApp's reply() answers: Reply-To when the message has one, else From. */
+function uncleReplyHeader(replyTo, from) {
+  var r = String(replyTo || "").trim();
+  return r && uncleReplyAddress(r) ? r : String(from || "");
 }
 
 /** A short fingerprint of what the confirmation card showed, so Send now sends exactly that. */
@@ -563,18 +545,6 @@ function uncleSendSignature(to, subject, text) {
   var h = 5381;
   for (var i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
   return h.toString(36) + "." + str.length;
-}
-
-/** Gmail API error body -> a readable message. */
-function uncleGmailErrorMessage(status, bodyText) {
-  var detail = "";
-  try {
-    var parsed = JSON.parse(bodyText);
-    detail = parsed && parsed.error && parsed.error.message ? String(parsed.error.message) : "";
-  } catch (err) { /* not JSON */ }
-  if (!detail) detail = String(bodyText || "").slice(0, 300);
-  var hint = status === 401 || status === 403 ? " Reopen the email; if Gmail asks, authorize the add-on again (it needs permission to send)." : "";
-  return "Gmail refused to send (HTTP " + status + ")" + (detail ? ": " + detail : "") + "." + hint;
 }
 
 var UNCLE_MAX_BODY = 20000;
@@ -780,9 +750,8 @@ if (typeof module !== "undefined" && module.exports) {
     uncleNeedsBareReply: uncleNeedsBareReply,
     uncleReplyAddress: uncleReplyAddress,
     uncleReplySubject: uncleReplySubject,
-    uncleBuildReplyMime: uncleBuildReplyMime,
+    uncleReplyHeader: uncleReplyHeader,
     uncleSendSignature: uncleSendSignature,
-    uncleGmailErrorMessage: uncleGmailErrorMessage,
     uncleThreadMessages: uncleThreadMessages,
     uncleNewState: uncleNewState,
     uncleNormalizeState: uncleNormalizeState,

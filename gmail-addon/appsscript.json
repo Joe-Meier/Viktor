@@ -6,11 +6,11 @@
     "https://www.googleapis.com/auth/gmail.addons.execute",
     "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
     "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
-    "https://www.googleapis.com/auth/gmail.send",
+    "https://mail.google.com/",
     "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/userinfo.email"
   ],
-  "urlFetchWhitelist": ["https://api.anthropic.com/", "https://gmail.googleapis.com/"],
+  "urlFetchWhitelist": ["https://api.anthropic.com/"],
   "addOns": {
     "common": {
       "name": "Per My Last Uncle",
