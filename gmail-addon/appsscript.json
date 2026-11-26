@@ -1,0 +1,27 @@
+{
+  "timeZone": "Etc/UTC",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "STACKDRIVER",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.addons.execute",
+    "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
+    "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
+    "https://mail.google.com/",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ],
+  "urlFetchWhitelist": ["https://api.anthropic.com/"],
+  "addOns": {
+    "common": {
+      "name": "Per My Last Uncle",
+      "logoUrl": "https://www.gstatic.com/images/icons/material/system/2x/elderly_black_48dp.png",
+      "layoutProperties": { "primaryColor": "#5b4636" },
+      "homepageTrigger": { "runFunction": "onHomepage", "enabled": true }
+    },
+    "gmail": {
+      "contextualTriggers": [
+        { "unconditional": {}, "onTriggerFunction": "onGmailMessage" }
+      ]
+    }
+  }
+}
